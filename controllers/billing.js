@@ -1,6 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
 const model = require('../models');
 const sequelize = require('../config/db');  // Sequelize instance
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const schedule = require('node-schedule'); require("dotenv").config();
+require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 // Generate a unique BILL ID for the user
 const generateBillId = async () => {
@@ -36,6 +41,7 @@ exports.createBilling = async (req, res) => {
     const { productData } = req.body;  // productData contains array of { productId, quantity }
     let data = []
     let total = 0
+    let totalWeight = 0
     if (!Array.isArray(productData) || productData.length === 0) {
         return res.status(400).json({
             success: false,
@@ -44,7 +50,7 @@ exports.createBilling = async (req, res) => {
     }
     
     if (user.role !== 'customer') {
-        return res.status(400).json({
+        return res.status(401).json({
             success: false,
             message: 'Only customers can create billing.',
         });
@@ -77,19 +83,22 @@ exports.createBilling = async (req, res) => {
             if (parseInt(quantity) > parseInt(product.stock)) {
                 return res.status(400).json({
                     success: false,
-                    message: `Entered quantity for product ${productId} exceeds available stock.`,
+                    message: `Entered quantity for product ${product.productName} exceeds available stock.`,
                 });
             }
 
             // Calculate the total price for this product
             const productTotalPrice = parseFloat(product.productPrice) * parseInt(quantity);
+            const productWeight = parseFloat(product.weight) * parseInt(quantity);
             total+=productTotalPrice
+            totalWeight+=productWeight
             
              prodData={
-                product:product.name,
+                product:product.productName,
                 quantity:quantity,
                 Total:productTotalPrice,
-                price:product.productPrice
+                price:product.productPrice,
+                weight:productWeight
              }
 
                 data.push(prodData)
@@ -120,7 +129,8 @@ exports.createBilling = async (req, res) => {
                     productData:data,
                     billId:billId,
                     customerName:customer.name,
-                    totalBilling:total
+                    totalBilling:total,
+                    totalWeight:totalWeight.toFixed(2)
                 }
 
             
@@ -139,3 +149,164 @@ exports.createBilling = async (req, res) => {
 
 
 
+
+
+exports.getBillingDetails = async (req, res) => {
+  const { billId } = req.query;
+  const user = req.user;
+
+  if (!billId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Bill ID is required.',
+    });
+  }
+
+  try {
+    // // Fetch customer and billing details
+    // const customer = await model.customer.findOne({ where: { userId: user.id } });
+    // if (!customer) {
+    //   return res.status(404).json({ success: false, message: 'Customer not found.' });
+    // }
+
+    const billingRecords = await model.billing.findAll({
+      where: { billId },
+      include: [{ model: model.product, attributes: ['productName', 'productPrice', 'weight'] }],
+    });
+
+    let customerId = billingRecords[0].customerId;
+    const customer = await model.customer.findOne({ where: { id: customerId } });
+
+    if (billingRecords.length === 0) {
+      return res.status(404).json({ success: false, message: 'No billing records found.' });
+    }
+
+    // Prepare data for the PDF
+    let totalBilling = 0;
+    let totalWeight = 0;
+    const productData = billingRecords.map((record) => {
+      const { quantity, totalPrice } = record;
+      const { productName, productPrice, weight } = record.product;
+
+      totalBilling += parseFloat(totalPrice);
+      const totalProductWeight = parseFloat(weight) * parseInt(quantity);
+      totalWeight += totalProductWeight;
+
+      return {
+        product: productName,
+        quantity,
+        price: productPrice,
+        total: totalPrice,
+        weight: totalProductWeight, // Keep weight up to 2 decimal places
+      };
+    });
+
+    // Create a new PDF document and set headers for response
+    const doc = new PDFDocument();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="billing_${billId}.pdf"`);
+
+    // Pipe the document to the response
+    doc.pipe(res);
+
+    // Header
+    doc.font('Helvetica-Bold').fontSize(24).text('Cartify', { align: 'center' });
+    doc.moveDown(0.5);
+
+    // Bill ID and Customer Name
+    doc.font('Helvetica-Bold').fontSize(12);
+    doc.text(`Bill ID: ${billId}`, 50, doc.y);
+    doc.text(`Customer: ${customer.name}`, 50, doc.y + 15);
+    doc.moveDown();
+
+    // Table Header
+    const columnPositions = { product: 50, quantity: 100, price: 150, total: 200, weight: 250 };
+    doc.font('Helvetica-Bold').fontSize(12);
+    doc.text('Product', columnPositions.product, doc.y, { continued: true });
+    doc.text('Quantity', columnPositions.quantity, doc.y, { continued: true });
+    doc.text('Price', columnPositions.price, doc.y, { continued: true });
+    doc.text('Total', columnPositions.total, doc.y, { continued: true });
+    doc.text('Weight', columnPositions.weight, doc.y);
+    doc.moveDown();
+
+    // Table Rows
+    doc.font('Helvetica').fontSize(12);
+    productData.forEach((item) => {
+      doc.text(item.product, columnPositions.product, doc.y, { continued: true });
+      doc.text(item.quantity.toString(), columnPositions.quantity, doc.y, { continued: true });
+      doc.text(`$${item.price}`, columnPositions.price, doc.y, { continued: true });
+      doc.text(`$${item.total}`, columnPositions.total, doc.y, { continued: true });
+      doc.text(`${item.weight} kg`, columnPositions.weight, doc.y);
+      doc.moveDown();
+    });
+
+    // Totals
+    doc.moveDown();
+    doc.font('Helvetica-Bold');
+    doc.text(`Total Billing: $${totalBilling.toFixed(2)}`, { align: 'left' });
+    doc.text(`Total Weight: ${totalWeight.toFixed(2)} kg`, { align: 'left' });
+
+    // Finalize the PDF
+    doc.end();
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+};
+
+
+exports.createPosBills = async (req, res) => {
+  const billId = req.query.billId;
+  if (!billId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Bill ID is required.',
+    });
+  }
+
+  try {
+    let existingPosBill = await model.posBills.findOne({ where: { billId } });
+    if (existingPosBill) {
+      return res.status(400).json({ success: false, message: 'POS bill already exists.' });
+    }
+
+    const billing = await model.billing.findOne({ where: { billId } });
+    if (!billing) {
+      return res.status(404).json({ success: false, message: 'Billing record not found.' });
+    }
+
+    const product = await model.product.findByPk(billing.productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+
+    const company = await model.company.findOne({ where: { userId: product.userId } });
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found.' });
+    }
+
+    const posBill = await model.posBills.create({ billId, status: 'pending', companyId: company.id });
+
+    // Schedule a job to cancel the bill if not paid within 30 minutes
+    schedule.scheduleJob(new Date(Date.now() + 30 * 60 * 1000), async () => {
+      try {
+        const currentBill = await model.posBills.findOne({ where: { billId } });
+        if (currentBill && currentBill.status === 'pending') {
+          await model.posBills.update({ status: 'cancelled' }, { where: { billId } });
+          console.log(`POS bill with ID ${billId} has been automatically cancelled.`);
+        }
+      } catch (error) {
+        console.error(`Error during scheduled cancellation of POS bill ${billId}:`, error);
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'POS bill created successfully.',
+      posBill,
+    });
+  } catch (error) {
+    console.error('Error creating POS bill:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -93,8 +93,6 @@ exports.createBrand = async (req, res) => {
       const { count, rows: brands } = await model.brand.findAndCountAll({
         where: { userId: user.id }, // Filter by the user's ID
         order: [['createdAt', 'DESC']],
-        limit: parseInt(limit, 10),
-        offset: parseInt(offset, 10),
       });
   
       // If no brands found, return a 404 response

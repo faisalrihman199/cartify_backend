@@ -5,6 +5,7 @@ const category = require('./category');
 const brand = require('./brand');
 const company = require('./company');
 const billing = require('./billing');
+const posBills = require('./posBills');
 const models = {
     user,
     customer,
@@ -12,7 +13,8 @@ const models = {
     category,
     brand,
     company,
-    billing
+    billing,
+    posBills
 }
 
 
@@ -23,6 +25,10 @@ customer.belongsTo(user);
 
 user.hasOne(company);
 company.belongsTo(user);
+
+company.hasOne(posBills)
+posBills.belongsTo(company)
+
 
 user.hasOne(product);
 product.belongsTo(user);

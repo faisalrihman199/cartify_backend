@@ -106,8 +106,6 @@ exports.getAllCategoriesPaginated = async (req, res) => {
     const { count, rows: categories } = await model.category.findAndCountAll({
       where: { userId: user.id },
       order: [['createdAt', 'DESC']],
-      limit: parseInt(limit, 10),
-      offset: parseInt(offset, 10),
     });
 
     // If no categories found, return a 404 response

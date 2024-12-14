@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Payment</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        /* Basic styling for the form */
+        .form-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+        }
+        .form-container label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-container input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .form-container button {
+            width: 100%;
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .form-container button:disabled {
+            background-color: #ccc;
+        }
+        .error-message {
+            color: red;
+            margin-bottom: 15px;
+        }
+        #card-element {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>Complete Payment</h2>
+        <form id="payment-form">
+            <div>
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" placeholder="Your Name" required>
+            </div>
+            <div>
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" placeholder="Your Email" required>
+            </div>
+            <div>
+                <label for="card-element">Card Details</label>
+                <!-- Stripe.js Card Element -->
+                <div id="card-element"></div>
+                <div class="error-message" id="card-errors" role="alert"></div>
+            </div>
+            <button type="submit" id="submit-button">Pay Now</button>
+        </form>
+    </div>
+
+    <script>
+        // Your Stripe publishable API key
+        const stripe = Stripe("pk_test_51PkvQAJnCuHDmbHeWHW7KiCwby2II1wzS8LLXfGK0LEHtjyC55ytBUJXaxPsyB4Hmv9I0hUA2xw9ahjOqrKjaMew001f4u75D0"); // Replace with your Stripe publishable key
+        const elements = stripe.elements();
+
+        // Create an instance of the card Element
+        const card = elements.create("card");
+        card.mount("#card-element");
+
+        // Handle real-time validation errors from the card Element
+        card.on("change", (event) => {
+            const cardErrors = document.getElementById("card-errors");
+            if (event.error) {
+                cardErrors.textContent = event.error.message;
+            } else {
+                cardErrors.textContent = "";
+            }
+        });
+
+        // Handle form submission
+        const form = document.getElementById("payment-form");
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            // Disable the submit button to prevent multiple clicks
+            const submitButton = document.getElementById("submit-button");
+            submitButton.disabled = true;
+
+            // Get the name and email from the form
+            const name = document.getElementById("name").value;
+            const email = document.getElementById("email").value;
+
+            // Your token
+            const token =
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJhZG1pbkBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3MzQwMjg3NDQsImV4cCI6MTczNDYzMzU0NH0.-Pob45RU9XNCBNsl9PANnB60GSIsQjvG-WPFoKOaSx0";
+
+            try {
+                // Fetch the clientSecret from your backend
+                const clientSecret = await fetch("http://localhost:5000/api/company/onlinePayment?id=BILL621910", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`, // Add the token here
+                    },
+                })
+                    .then((res) => res.json())
+                    .then((data) => data.data.clientSecret);
+
+                // Confirm the payment with Stripe.js
+                const result = await stripe.confirmCardPayment(clientSecret, {
+                    payment_method: {
+                        card: card,
+                        billing_details: {
+                            name: name,
+                            email: email,
+                        },
+                    },
+                });
+
+                if (result.error) {
+                    // Show error to your customer
+                    console.error(result.error.message);
+                    document.getElementById("card-errors").textContent = result.error.message;
+                    submitButton.disabled = false;
+                } else {
+                    // The payment succeeded!
+                    alert("Payment successful!");
+                    console.log("Payment successful:", result.paymentIntent);
+                    // Redirect to a success page or update the UI
+                }
+            } catch (error) {
+                console.error("Error fetching client secret or confirming payment:", error);
+                document.getElementById("card-errors").textContent = "Failed to process payment. Please try again.";
+                submitButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

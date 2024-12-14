@@ -132,15 +132,28 @@ exports.createProduct = async (req, res) => {
       // Fetch paginated products associated with the user and filter by name if search is provided
       const products = await model.product.findAndCountAll({
         where: {
-          userId: user.id, // Ensure the product belongs to the authenticated user
+          userId: user.id,
           productName: {
-            [Op.like]: `%${search}%`, // Use Op.like with wildcard to filter by name containing the search value
+            [Op.like]: `%${search}%`,
           },
         },
-        limit, // Limit the number of items returned per page
-        offset, // Offset based on the current page
-        order: [["createdAt", "DESC"]], // Optional: Order products by creation date (descending)
+        include: [
+          {
+            model: model.category, // Assuming `category` is the associated model
+            attributes: ["id", "name"], // Specify the fields to retrieve from the category
+          },
+          {
+            model: model.brand, // Assuming `brand` is the associated model
+            attributes: ["id", "name"], // Specify the fields to retrieve from the brand
+          },
+        ],
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
       });
+      
+      console.log(products.rows); // Log the products to check the included associations
+      
   
       // Calculate total pages based on the total number of products and the limit
       const totalPages = Math.ceil(products.count / limit);
@@ -167,10 +180,11 @@ exports.createProduct = async (req, res) => {
   exports.getOneProduct = async (req, res) => {
     try {
       // Get the productId from the request parameters
-      const { productId } = req.params;
-  
+      const { productCode } = req.params;
+      console.log("productCode", productCode);
+      
       // Check if productId is provided
-      if (!productId) {
+      if (!productCode) {
         return res.status(400).json({ success: false, message: 'productId is required' });
       }
   
@@ -179,7 +193,7 @@ exports.createProduct = async (req, res) => {
   
       // Fetch the product with the given productId and ensure it belongs to the authenticated user
       const product = await model.product.findOne({
-        where: { id: productId, UserId: user.id },  // Ensure the product belongs to the authenticated user
+        where: { productCode },  // Ensure the product belongs to the authenticated user
         attributes: { exclude: ['createdAt', 'updatedAt'] },  // Exclude createdAt and updatedAt fields
         raw: true,  // Return raw data instead of Sequelize model instances
       });
@@ -233,7 +247,7 @@ exports.createProduct = async (req, res) => {
 
 
 
-  const { v4: uuidv4 } = require('uuid');
+  
 
 
 

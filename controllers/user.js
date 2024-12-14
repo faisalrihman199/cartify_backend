@@ -27,6 +27,9 @@ const verifyOtp = (email, otp) => {
 };
 exports.sendOtp = async (req, res) => {
   const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email is required' });
+  }
   try {
     await generateAndSendOtp(email);
     return res.status(200).json({ success: true, message: 'OTP sent successfully' });
@@ -98,7 +101,7 @@ exports.login = async (req, res) => {
     const payload = { id: user.id, email: user.email, role: user.role };
     const token = generateJwtToken(payload);
 
-    return res.status(200).json({ success: true, message: 'Login successful', data:{token} });
+    return res.status(200).json({ success: true, message: 'Login successful', data:{token,role:user.role} });
   } catch (error) {
     console.error('Error logging in:', error);
     return res.status(500).json({ success: false, message: error.message });
@@ -194,3 +197,5 @@ exports.resetPassword = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 }
+
+
