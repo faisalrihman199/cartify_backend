@@ -55,7 +55,7 @@ exports.createProduct = async (req, res) => {
         existingProduct.brandId = brandId;
         existingProduct.categoryId = categoryId;
         existingProduct.productName = productName;
-        existingProduct.productCode = productCode;
+        // existingProduct.productCode = productCode;
         existingProduct.productPrice = productPrice;
         existingProduct.description = description;
         existingProduct.weight = weight;
@@ -136,6 +136,7 @@ exports.createProduct = async (req, res) => {
           productName: {
             [Op.like]: `%${search}%`,
           },
+          status: { [Op.ne]: 'removed' }, // Exclude soft-deleted products
         },
         include: [
           {
@@ -193,7 +194,9 @@ exports.createProduct = async (req, res) => {
   
       // Fetch the product with the given productId and ensure it belongs to the authenticated user
       const product = await model.product.findOne({
-        where: { productCode },  // Ensure the product belongs to the authenticated user
+        where: { productCode,
+          status: { [Op.ne]: 'removed' }
+         },
         attributes: { exclude: ['createdAt', 'updatedAt'] },  // Exclude createdAt and updatedAt fields
         raw: true,  // Return raw data instead of Sequelize model instances
       });

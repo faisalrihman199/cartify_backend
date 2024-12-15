@@ -6,6 +6,7 @@ const fs = require('fs');
 const schedule = require('node-schedule'); require("dotenv").config();
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
+const { Op } = require('sequelize');
 
 // Generate a unique BILL ID for the user
 const generateBillId = async () => {
@@ -310,3 +311,36 @@ exports.createPosBills = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Scheduler to check every 1 minute for pending bills that are older than 30 minutes
+schedule.scheduleJob('*/1 * * * *', async () => {
+  try {
+    // Get the current date and time
+    const currentTime = new Date();
+
+    // Find bills that are pending and have been created more than 30 minutes ago
+    const pendingBills = await model.posBills.findAll({
+      where: {
+        status: 'pending',
+        createdAt: {
+          [Op.lte]: new Date(currentTime - 30 * 60 * 1000) // 30 minutes ago
+        }
+      }
+    });
+
+    if (pendingBills.length > 0) {
+      // Update the status of the pending bills to 'cancelled'
+      for (let bill of pendingBills) {
+        await model.posBills.update(
+          { status: 'cancelled' },
+          { where: { billId: bill.billId } }
+        );
+        console.log(`POS bill with ID ${bill.billId} has been automatically cancelled.`);
+      }
+    } else {
+      console.log('No pending bills older than 30 minutes found.');
+    }
+  } catch (error) {
+    console.error('Error during the scheduled bill check:', error);
+  }
+});

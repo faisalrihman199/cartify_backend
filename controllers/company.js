@@ -125,6 +125,7 @@ exports.getAllPendingPosBillsPaginated = async (req, res) => {
 
 exports.setPosBillAsPaid = async (req, res) => {
     const user = req.user;
+    console.log("user is ", user);
 
     // Ensure the user is an admin
     if (user.role !== 'admin') {
@@ -145,13 +146,7 @@ exports.setPosBillAsPaid = async (req, res) => {
     try {
         // Find the POS bill by ID
         const posBill = await model.posBills.findOne({
-            where: { id: posBillId },
-            include: [
-                {
-                    model: model.billing,
-                    include: [{ model: model.product }]
-                }
-            ]
+            where: { id: posBillId }
         });
 
         // Check if the POS bill exists
@@ -162,20 +157,21 @@ exports.setPosBillAsPaid = async (req, res) => {
             });
         }
 
-        // Validate ownership (ensure the user owns all products in the bill)
-        const unauthorized = posBill.billing.some(
-            (billing) => billing.product.userId !== user.id
-        );
+        // Find the billing records associated with the POS bill
+        const billings = await model.billing.findAll({
+            where: { billId: posBill.billId }, // Use billId to find related billing records
+            include: [{ model: model.product }] // Include the product details for stock updates
+        });
 
-        if (unauthorized) {
-            return res.status(403).json({
+        if (!billings || billings.length === 0) {
+            return res.status(404).json({
                 success: false,
-                message: 'You are not authorized to perform this action.'
+                message: 'No billing records found for this POS bill.'
             });
         }
 
         // Deduct the quantity from stock for each product in the bill
-        for (const billing of posBill.billing) {
+        for (const billing of billings) {
             const product = billing.product;
             const newStock = product.stock - billing.quantity;
 
@@ -211,6 +207,7 @@ exports.setPosBillAsPaid = async (req, res) => {
         });
     }
 };
+
 
 
 exports.posOnlinePayment = async (req, res) => {
